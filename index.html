@@ -1,0 +1,455 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Interactive Graphs with Day Navigation</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      max-width: 960px;
+      margin: 0 auto;
+      padding: 20px;
+      background-color: #f4f4f9;
+    }
+    .container {
+      background: white;
+      padding: 20px;
+      border-radius: 10px;
+      box-shadow: 0 4px 10px rgba(0,0,0,0.1);
+    }
+    .controls {
+      display: flex;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      margin-bottom: 20px;
+    }
+    .buttons {
+      display: flex;
+      gap: 10px;
+    }
+    .buttons button {
+      padding: 10px 16px;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 14px;
+      transition: 0.3s;
+      background: #4caf50;
+      color: white;
+    }
+    .buttons button.active {
+      background-color: #2e7d32;
+    }
+    .buttons button:hover {
+      background-color: #2e7d32;
+    }
+    /* Navigation buttons for Day View */
+    #dayNav {
+      display: none;
+      gap: 10px;
+      margin-top: 10px;
+    }
+    #dayNav button {
+      padding: 8px 12px;
+      background: #2196f3;
+      border: none;
+      border-radius: 4px;
+      color: white;
+      cursor: pointer;
+      font-size: 13px;
+    }
+    #dayNav button:hover {
+      background: #1976d2;
+    }
+    #resetData {
+      padding: 10px 16px;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 14px;
+      background: #ff9800;
+      color: white;
+    }
+    #resetData:hover {
+      background: #f57c00;
+    }
+    .selected-label {
+      font-size: 18px;
+      margin-bottom: 10px;
+    }
+    .value-controls {
+      display: flex;
+      flex-direction: column;
+      gap: 15px;
+      margin-bottom: 20px;
+    }
+    .value-control {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    input[type="range"] {
+      flex: 1;
+    }
+    .chart-container {
+      position: relative;
+      height: 400px;
+      margin-bottom: 20px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Interactive Graphs</h1>
+    
+    <div class="controls">
+      <div class="buttons">
+        <button id="dayView">Day View</button>
+        <button id="dailyView" class="active">Daily View</button>
+        <button id="weeklyView">Weekly View</button>
+      </div>
+      <!-- Day Navigation controls (visible only in Day View) -->
+      <div id="dayNav">
+        <button id="prevDay">Previous Day</button>
+        <button id="nextDay">Next Day</button>
+      </div>
+      <button id="resetData">Reset Data</button>
+    </div>
+    
+    <div class="selected-label">
+      Selected: <span id="selectedLabel"></span>
+    </div>
+    
+    <!-- Slider controls (visible only in Day View) -->
+    <div class="value-controls" id="valueControls">
+      <div class="value-control">
+        <label>Tech Focus:</label>
+        <input type="range" id="techSlider" min="0" max="100" value="50" />
+        <span id="techValue">50</span>
+      </div>
+      <div class="value-control">
+        <label>Study Focus:</label>
+        <input type="range" id="studySlider" min="0" max="100" value="40" />
+        <span id="studyValue">40</span>
+      </div>
+    </div>
+    
+    <div class="chart-container">
+      <canvas id="techChart"></canvas>
+    </div>
+    <div class="chart-container">
+      <canvas id="studyChart"></canvas>
+    </div>
+  </div>
+  
+  <script>
+    // getColor returns a color based on value: red (<33), yellow (33–65), green (>=66)
+    function getColor(value) {
+      if (value < 33) return 'red';
+      else if (value < 66) return 'yellow';
+      else return 'green';
+    }
+    
+    // Base data now holds multiple days for Day View.
+    const initialData = {
+      days: [
+        {
+          date: "Today",
+          data: Array.from({ length: 13 }, (_, i) => {
+            let label;
+            if (i === 0) label = "12 AM";
+            else if (i === 12) label = "12 PM";
+            else label = `${i} AM`;
+            return { hour: label, tech: 50, study: 40 };
+          })
+        },
+        {
+          date: "Yesterday",
+          data: Array.from({ length: 13 }, (_, i) => {
+            let label;
+            if (i === 0) label = "12 AM";
+            else if (i === 12) label = "12 PM";
+            else label = `${i} AM`;
+            return { hour: label, tech: 50, study: 40 };
+          })
+        }
+        // You can add more days here.
+      ]
+    };
+    
+    // Retrieve saved data; if missing or malformed, use initialData.
+    let storedData = localStorage.getItem('graphData');
+    let graphData = {};
+    if (storedData) {
+      try {
+        graphData = JSON.parse(storedData);
+      } catch (e) {
+        graphData = { ...initialData };
+      }
+    }
+    if (!graphData.days) {
+      graphData = { ...initialData };
+    }
+    
+    // Compute Daily View: average each day’s hourly data.
+    function computeDailyView() {
+      return graphData.days.map(dayObj => {
+        let sumTech = 0, sumStudy = 0;
+        dayObj.data.forEach(pt => {
+          sumTech += pt.tech;
+          sumStudy += pt.study;
+        });
+        return {
+          day: dayObj.date,
+          tech: Math.round(sumTech / dayObj.data.length),
+          study: Math.round(sumStudy / dayObj.data.length)
+        };
+      });
+    }
+    
+    // Compute Weekly View: average all days from Daily View.
+    function computeWeeklyView() {
+      const daily = computeDailyView();
+      let sumTech = daily.reduce((acc, d) => acc + d.tech, 0);
+      let sumStudy = daily.reduce((acc, d) => acc + d.study, 0);
+      return [{
+        week: "Week 1",
+        tech: Math.round(sumTech / daily.length),
+        study: Math.round(sumStudy / daily.length)
+      }];
+    }
+    
+    // In this version, changes are made in Day View only.
+    // Aggregated Daily and Weekly views are computed on the fly.
+    let currentView = 'daily'; // default view
+    let currentDayIndex = 0; // index into graphData.days for Day View
+    let selectedIndex = 0; // index into the current day’s hourly data
+    let dayViewAutoSelect = true; // if true, auto-select based on current time until user clicks
+    
+    const techCtx = document.getElementById('techChart').getContext('2d');
+    const studyCtx = document.getElementById('studyChart').getContext('2d');
+    let techChart, studyChart;
+    
+    // For our 13-point Day View, if current hour < 12, use that hour index; otherwise use index 12.
+    function getCurrentDayIndex() {
+      let hr = new Date().getHours();
+      return hr < 12 ? hr : 12;
+    }
+    
+    // updateCharts refreshes the Chart.js graphs based on the current view.
+    function updateCharts() {
+      let data = [];
+      let labels = [];
+      let techValues = [];
+      let studyValues = [];
+      
+      if (currentView === 'day') {
+        data = graphData.days[currentDayIndex].data;
+        labels = data.map(item => item.hour);
+        techValues = data.map(item => item.tech);
+        studyValues = data.map(item => item.study);
+      } else if (currentView === 'daily') {
+        data = computeDailyView();
+        labels = data.map(item => item.day);
+        techValues = data.map(item => item.tech);
+        studyValues = data.map(item => item.study);
+      } else if (currentView === 'weekly') {
+        data = computeWeeklyView();
+        labels = data.map(item => item.week);
+        techValues = data.map(item => item.tech);
+        studyValues = data.map(item => item.study);
+      }
+      
+      if (techChart) techChart.destroy();
+      if (studyChart) studyChart.destroy();
+      
+      techChart = new Chart(techCtx, {
+        type: 'line',
+        data: {
+          labels: labels,
+          datasets: [{
+            label: 'Tech Focus',
+            data: techValues,
+            borderWidth: 2,
+            fill: true,
+            segment: {
+              borderColor: ctx => {
+                const idx = ctx.p0DataIndex;
+                return getColor(techValues[idx]);
+              }
+            },
+            pointBackgroundColor: techValues.map(val => getColor(val))
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          onClick: (event, elements) => {
+            if (elements.length > 0) {
+              if (currentView === 'day') dayViewAutoSelect = false;
+              selectedIndex = elements[0].index;
+              updateSelectedData();
+            }
+          }
+        }
+      });
+      
+      studyChart = new Chart(studyCtx, {
+        type: 'line',
+        data: {
+          labels: labels,
+          datasets: [{
+            label: 'Study Focus',
+            data: studyValues,
+            borderWidth: 2,
+            fill: true,
+            segment: {
+              borderColor: ctx => {
+                const idx = ctx.p0DataIndex;
+                return getColor(studyValues[idx]);
+              }
+            },
+            pointBackgroundColor: studyValues.map(val => getColor(val))
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          onClick: (event, elements) => {
+            if (elements.length > 0) {
+              if (currentView === 'day') dayViewAutoSelect = false;
+              selectedIndex = elements[0].index;
+              updateSelectedData();
+            }
+          }
+        }
+      });
+    }
+    
+    // updateSelectedData refreshes the selected label and slider controls.
+    function updateSelectedData() {
+      let data = [];
+      if (currentView === 'day') {
+        if (dayViewAutoSelect) {
+          selectedIndex = getCurrentDayIndex();
+        }
+        data = graphData.days[currentDayIndex].data;
+        document.getElementById('valueControls').style.display = 'flex';
+        document.getElementById('dayNav').style.display = 'flex';
+        document.getElementById('selectedLabel').textContent =
+          graphData.days[currentDayIndex].date + " - " + data[selectedIndex].hour;
+        document.getElementById('techSlider').value = data[selectedIndex].tech;
+        document.getElementById('techValue').textContent = data[selectedIndex].tech;
+        document.getElementById('studySlider').value = data[selectedIndex].study;
+        document.getElementById('studyValue').textContent = data[selectedIndex].study;
+      } else if (currentView === 'daily') {
+        data = computeDailyView();
+        document.getElementById('selectedLabel').textContent = data[selectedIndex].day;
+        document.getElementById('valueControls').style.display = 'none';
+        document.getElementById('dayNav').style.display = 'none';
+      } else if (currentView === 'weekly') {
+        data = computeWeeklyView();
+        document.getElementById('selectedLabel').textContent = data[selectedIndex].week;
+        document.getElementById('valueControls').style.display = 'none';
+        document.getElementById('dayNav').style.display = 'none';
+      }
+    }
+    
+    // setActiveButton highlights the current view button.
+    function setActiveButton(activeId) {
+      document.querySelectorAll('.buttons button').forEach(btn => {
+        btn.classList.remove('active');
+      });
+      document.getElementById(activeId).classList.add('active');
+    }
+    
+    // Event listeners for view switching.
+    document.getElementById('dayView').addEventListener('click', () => {
+      currentView = 'day';
+      dayViewAutoSelect = true;
+      currentDayIndex = 0; // default to first day (e.g., Today)
+      selectedIndex = getCurrentDayIndex();
+      setActiveButton('dayView');
+      updateCharts();
+      updateSelectedData();
+    });
+    
+    document.getElementById('dailyView').addEventListener('click', () => {
+      currentView = 'daily';
+      setActiveButton('dailyView');
+      selectedIndex = 0;
+      updateCharts();
+      updateSelectedData();
+    });
+    
+    document.getElementById('weeklyView').addEventListener('click', () => {
+      currentView = 'weekly';
+      setActiveButton('weeklyView');
+      selectedIndex = 0;
+      updateCharts();
+      updateSelectedData();
+    });
+    
+    // Day navigation buttons (only active in Day View)
+    document.getElementById('prevDay').addEventListener('click', () => {
+      if (currentView === 'day' && currentDayIndex > 0) {
+        currentDayIndex--;
+        dayViewAutoSelect = true;
+        selectedIndex = getCurrentDayIndex();
+        updateCharts();
+        updateSelectedData();
+      }
+    });
+    
+    document.getElementById('nextDay').addEventListener('click', () => {
+      if (currentView === 'day' && currentDayIndex < graphData.days.length - 1) {
+        currentDayIndex++;
+        dayViewAutoSelect = true;
+        selectedIndex = getCurrentDayIndex();
+        updateCharts();
+        updateSelectedData();
+      }
+    });
+    
+    // Slider events (active only in Day View) update the corresponding hourly data.
+    document.getElementById('techSlider').addEventListener('input', function () {
+      if (currentView === 'day') {
+        const value = parseInt(this.value);
+        document.getElementById('techValue').textContent = value;
+        graphData.days[currentDayIndex].data[selectedIndex].tech = value;
+        updateCharts();
+        updateSelectedData();
+        localStorage.setItem('graphData', JSON.stringify(graphData));
+      }
+    });
+    
+    document.getElementById('studySlider').addEventListener('input', function () {
+      if (currentView === 'day') {
+        const value = parseInt(this.value);
+        document.getElementById('studyValue').textContent = value;
+        graphData.days[currentDayIndex].data[selectedIndex].study = value;
+        updateCharts();
+        updateSelectedData();
+        localStorage.setItem('graphData', JSON.stringify(graphData));
+      }
+    });
+    
+    // Reset button restores initial data.
+    document.getElementById('resetData').addEventListener('click', () => {
+      graphData = { ...initialData };
+      currentDayIndex = 0;
+      dayViewAutoSelect = true;
+      selectedIndex = 0;
+      updateCharts();
+      updateSelectedData();
+      localStorage.setItem('graphData', JSON.stringify(graphData));
+    });
+    
+    // Initial load.
+    updateCharts();
+    updateSelectedData();
+  </script>
+</body>
+</html>
