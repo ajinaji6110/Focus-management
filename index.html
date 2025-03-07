@@ -3,21 +3,41 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Interactive Graphs with Day Navigation</title>
+  <title>Interactive Graphs with Premium Live Graphs</title>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
   <style>
+    /* Background gradient animation for body */
+    @keyframes gradientBG {
+      0% { background-position: 0% 50%; }
+      50% { background-position: 100% 50%; }
+      100% { background-position: 0% 50%; }
+    }
+    /* Fade in animation */
+    @keyframes fadeIn {
+      from { opacity: 0; transform: scale(0.95); }
+      to { opacity: 1; transform: scale(1); }
+    }
+    /* Pulse animation for live graph canvases */
+    @keyframes pulse {
+      0% { transform: scale(1); }
+      50% { transform: scale(1.02); }
+      100% { transform: scale(1); }
+    }
     body {
       font-family: Arial, sans-serif;
       max-width: 960px;
       margin: 0 auto;
       padding: 20px;
-      background-color: #f4f4f9;
+      background: linear-gradient(135deg, #f4f4f9, #e0e0ef);
+      background-size: 400% 400%;
+      animation: gradientBG 15s ease infinite, fadeIn 1s ease-out;
     }
     .container {
       background: white;
       padding: 20px;
       border-radius: 10px;
       box-shadow: 0 4px 10px rgba(0,0,0,0.1);
+      animation: fadeIn 1s ease-out;
     }
     .controls {
       display: flex;
@@ -35,7 +55,7 @@
       border-radius: 6px;
       cursor: pointer;
       font-size: 14px;
-      transition: 0.3s;
+      transition: background-color 0.3s ease, transform 0.2s ease;
       background: #4caf50;
       color: white;
     }
@@ -44,6 +64,7 @@
     }
     .buttons button:hover {
       background-color: #2e7d32;
+      transform: scale(1.05);
     }
     /* Navigation buttons for Day View */
     #dayNav {
@@ -59,9 +80,11 @@
       color: white;
       cursor: pointer;
       font-size: 13px;
+      transition: background-color 0.3s ease, transform 0.2s ease;
     }
     #dayNav button:hover {
       background: #1976d2;
+      transform: scale(1.05);
     }
     #resetData {
       padding: 10px 16px;
@@ -71,9 +94,11 @@
       font-size: 14px;
       background: #ff9800;
       color: white;
+      transition: background-color 0.3s ease, transform 0.2s ease;
     }
     #resetData:hover {
       background: #f57c00;
+      transform: rotate(2deg);
     }
     .selected-label {
       font-size: 18px;
@@ -92,11 +117,20 @@
     }
     input[type="range"] {
       flex: 1;
+      transition: transform 0.3s ease;
+    }
+    input[type="range"]:hover {
+      transform: scale(1.05);
     }
     .chart-container {
       position: relative;
       height: 400px;
       margin-bottom: 20px;
+      animation: fadeIn 1s ease-out;
+    }
+    /* Premium live chart animation on the canvas */
+    .live-canvas {
+      animation: pulse 2s ease-in-out infinite;
     }
   </style>
 </head>
@@ -109,8 +143,9 @@
         <button id="dayView">Day View</button>
         <button id="dailyView" class="active">Daily View</button>
         <button id="weeklyView">Weekly View</button>
+        <button id="liveView">Live Graph</button>
       </div>
-      <!-- Day Navigation controls (visible only in Day View) -->
+      <!-- Navigation for Day View -->
       <div id="dayNav">
         <button id="prevDay">Previous Day</button>
         <button id="nextDay">Next Day</button>
@@ -122,7 +157,7 @@
       Selected: <span id="selectedLabel"></span>
     </div>
     
-    <!-- Slider controls (visible only in Day View) -->
+    <!-- Slider controls (for Day View only) -->
     <div class="value-controls" id="valueControls">
       <div class="value-control">
         <label>Tech Focus:</label>
@@ -136,71 +171,73 @@
       </div>
     </div>
     
-    <div class="chart-container">
+    <!-- Regular Charts Container (for Day/Daily/Weekly views) -->
+    <div class="chart-container" id="existingCharts">
       <canvas id="techChart"></canvas>
-    </div>
-    <div class="chart-container">
       <canvas id="studyChart"></canvas>
+    </div>
+    <!-- Live Charts Container (hidden by default) -->
+    <div class="chart-container" id="liveContainer" style="display: none;">
+      <!-- Add premium live charts with extra animation class -->
+      <canvas id="liveTechChart" class="live-canvas"></canvas>
+      <canvas id="liveStudyChart" class="live-canvas"></canvas>
     </div>
   </div>
   
   <script>
-    // getColor returns a color based on value: red (<33), yellow (33–65), green (>=66)
+    // Utility: Return red for <33, yellow for 33–65, green for ≥66.
     function getColor(value) {
       if (value < 33) return 'red';
       else if (value < 66) return 'yellow';
       else return 'green';
     }
     
-    // Base data now holds multiple days for Day View.
+    // --- Data & Views for Day/Daily/Weekly ---
     const initialData = {
       days: [
         {
           date: "Today",
-          data: Array.from({ length: 13 }, (_, i) => {
-            let label;
-            if (i === 0) label = "12 AM";
-            else if (i === 12) label = "12 PM";
-            else label = `${i} AM`;
+          data: Array.from({ length: 24 }, (_, i) => {
+            let label = (i === 0) ? "12 AM" : (i < 12) ? `${i} AM` : (i === 12) ? "12 PM" : `${i - 12} PM`;
             return { hour: label, tech: 50, study: 40 };
           })
         },
         {
           date: "Yesterday",
-          data: Array.from({ length: 13 }, (_, i) => {
-            let label;
-            if (i === 0) label = "12 AM";
-            else if (i === 12) label = "12 PM";
-            else label = `${i} AM`;
+          data: Array.from({ length: 24 }, (_, i) => {
+            let label = (i === 0) ? "12 AM" : (i < 12) ? `${i} AM` : (i === 12) ? "12 PM" : `${i - 12} PM`;
             return { hour: label, tech: 50, study: 40 };
           })
         }
-        // You can add more days here.
       ]
     };
     
-    // Retrieve saved data; if missing or malformed, use initialData.
     let storedData = localStorage.getItem('graphData');
     let graphData = {};
     if (storedData) {
-      try {
-        graphData = JSON.parse(storedData);
-      } catch (e) {
-        graphData = { ...initialData };
-      }
+      try { graphData = JSON.parse(storedData); }
+      catch (e) { graphData = { ...initialData }; }
     }
     if (!graphData.days) {
       graphData = { ...initialData };
+    } else {
+      let updated = false;
+      graphData.days.forEach(day => {
+        if (!day.data || day.data.length !== 24) {
+          day.data = Array.from({ length: 24 }, (_, i) => {
+            let label = (i === 0) ? "12 AM" : (i < 12) ? `${i} AM` : (i === 12) ? "12 PM" : `${i - 12} PM`;
+            return { hour: label, tech: 50, study: 40 };
+          });
+          updated = true;
+        }
+      });
+      if (updated) localStorage.setItem('graphData', JSON.stringify(graphData));
     }
     
-    // Compute Daily View: average each day’s hourly data.
     function computeDailyView() {
       return graphData.days.map(dayObj => {
         let sumTech = 0, sumStudy = 0;
-        dayObj.data.forEach(pt => {
-          sumTech += pt.tech;
-          sumStudy += pt.study;
-        });
+        dayObj.data.forEach(pt => { sumTech += pt.tech; sumStudy += pt.study; });
         return {
           day: dayObj.date,
           tech: Math.round(sumTech / dayObj.data.length),
@@ -208,8 +245,6 @@
         };
       });
     }
-    
-    // Compute Weekly View: average all days from Daily View.
     function computeWeeklyView() {
       const daily = computeDailyView();
       let sumTech = daily.reduce((acc, d) => acc + d.tech, 0);
@@ -221,25 +256,26 @@
       }];
     }
     
-    // In this version, changes are made in Day View only.
-    // Aggregated Daily and Weekly views are computed on the fly.
-    let currentView = 'daily'; // default view
-    let currentDayIndex = 0; // index into graphData.days for Day View
-    let selectedIndex = 0; // index into the current day’s hourly data
-    let dayViewAutoSelect = true; // if true, auto-select based on current time until user clicks
+    let currentView = 'daily'; // Options: 'day', 'daily', 'weekly', 'live'
+    let currentDayIndex = 0;
+    let selectedIndex = 0;
+    let dayViewAutoSelect = true;
     
     const techCtx = document.getElementById('techChart').getContext('2d');
     const studyCtx = document.getElementById('studyChart').getContext('2d');
     let techChart, studyChart;
+    let lastView = currentView;
     
-    // For our 13-point Day View, if current hour < 12, use that hour index; otherwise use index 12.
     function getCurrentDayIndex() {
-      let hr = new Date().getHours();
-      return hr < 12 ? hr : 12;
+      return new Date().getHours();
     }
     
-    // updateCharts refreshes the Chart.js graphs based on the current view.
     function updateCharts() {
+      if (currentView !== 'live') {
+        document.getElementById('existingCharts').style.display = 'block';
+        document.getElementById('liveContainer').style.display = 'none';
+      }
+      
       let data = [];
       let labels = [];
       let techValues = [];
@@ -262,79 +298,106 @@
         studyValues = data.map(item => item.study);
       }
       
-      if (techChart) techChart.destroy();
-      if (studyChart) studyChart.destroy();
-      
-      techChart = new Chart(techCtx, {
-        type: 'line',
-        data: {
-          labels: labels,
-          datasets: [{
-            label: 'Tech Focus',
-            data: techValues,
-            borderWidth: 2,
-            fill: true,
-            segment: {
-              borderColor: ctx => {
-                const idx = ctx.p0DataIndex;
-                return getColor(techValues[idx]);
-              }
+      if (currentView !== 'live') {
+        const techGradient = techCtx.createLinearGradient(0, 0, 0, techCtx.canvas.height);
+        techGradient.addColorStop(0, 'rgba(255, 0, 0, 0.2)');
+        techGradient.addColorStop(0.5, 'rgba(255, 255, 0, 0.2)');
+        techGradient.addColorStop(1, 'rgba(0, 128, 0, 0.2)');
+        
+        const studyGradient = studyCtx.createLinearGradient(0, 0, 0, studyCtx.canvas.height);
+        studyGradient.addColorStop(0, 'rgba(255, 0, 0, 0.2)');
+        studyGradient.addColorStop(0.5, 'rgba(255, 255, 0, 0.2)');
+        studyGradient.addColorStop(1, 'rgba(0, 128, 0, 0.2)');
+        
+        if (techChart && lastView === currentView) {
+          techChart.data.labels = labels;
+          techChart.data.datasets[0].data = techValues;
+          techChart.data.datasets[0].backgroundColor = techGradient;
+          techChart.data.datasets[0].pointBackgroundColor = techValues.map(val => getColor(val));
+          techChart.data.datasets[0].pointBorderColor = techValues.map(val => getColor(val));
+          techChart.update({duration: 800, easing: 'easeOutQuart'});
+        } else {
+          if (techChart) techChart.destroy();
+          techChart = new Chart(techCtx, {
+            type: 'line',
+            data: {
+              labels: labels,
+              datasets: [{
+                label: 'Tech Focus',
+                data: techValues,
+                borderWidth: 2,
+                fill: true,
+                backgroundColor: techGradient,
+                segment: { borderColor: ctx => getColor(ctx.p0.parsed.y) },
+                pointBackgroundColor: techValues.map(val => getColor(val)),
+                pointBorderColor: techValues.map(val => getColor(val)),
+                pointRadius: 5,
+                pointHoverRadius: 7
+              }]
             },
-            pointBackgroundColor: techValues.map(val => getColor(val))
-          }]
-        },
-        options: {
-          responsive: true,
-          maintainAspectRatio: false,
-          onClick: (event, elements) => {
-            if (elements.length > 0) {
-              if (currentView === 'day') dayViewAutoSelect = false;
-              selectedIndex = elements[0].index;
-              updateSelectedData();
-            }
-          }
-        }
-      });
-      
-      studyChart = new Chart(studyCtx, {
-        type: 'line',
-        data: {
-          labels: labels,
-          datasets: [{
-            label: 'Study Focus',
-            data: studyValues,
-            borderWidth: 2,
-            fill: true,
-            segment: {
-              borderColor: ctx => {
-                const idx = ctx.p0DataIndex;
-                return getColor(studyValues[idx]);
+            options: {
+              responsive: true,
+              maintainAspectRatio: false,
+              animation: { duration: 800, easing: 'easeOutQuart' },
+              onClick: (event, elements) => {
+                if (elements.length > 0) {
+                  if (currentView === 'day') dayViewAutoSelect = false;
+                  selectedIndex = elements[0].index;
+                  updateSelectedData();
+                }
               }
-            },
-            pointBackgroundColor: studyValues.map(val => getColor(val))
-          }]
-        },
-        options: {
-          responsive: true,
-          maintainAspectRatio: false,
-          onClick: (event, elements) => {
-            if (elements.length > 0) {
-              if (currentView === 'day') dayViewAutoSelect = false;
-              selectedIndex = elements[0].index;
-              updateSelectedData();
             }
-          }
+          });
         }
-      });
+        
+        if (studyChart && lastView === currentView) {
+          studyChart.data.labels = labels;
+          studyChart.data.datasets[0].data = studyValues;
+          studyChart.data.datasets[0].backgroundColor = studyGradient;
+          studyChart.data.datasets[0].pointBackgroundColor = studyValues.map(val => getColor(val));
+          studyChart.data.datasets[0].pointBorderColor = studyValues.map(val => getColor(val));
+          studyChart.update({duration: 800, easing: 'easeOutQuart'});
+        } else {
+          if (studyChart) studyChart.destroy();
+          studyChart = new Chart(studyCtx, {
+            type: 'line',
+            data: {
+              labels: labels,
+              datasets: [{
+                label: 'Study Focus',
+                data: studyValues,
+                borderWidth: 2,
+                fill: true,
+                backgroundColor: studyGradient,
+                segment: { borderColor: ctx => getColor(ctx.p0.parsed.y) },
+                pointBackgroundColor: studyValues.map(val => getColor(val)),
+                pointBorderColor: studyValues.map(val => getColor(val)),
+                pointRadius: 5,
+                pointHoverRadius: 7
+              }]
+            },
+            options: {
+              responsive: true,
+              maintainAspectRatio: false,
+              animation: { duration: 800, easing: 'easeOutQuart' },
+              onClick: (event, elements) => {
+                if (elements.length > 0) {
+                  if (currentView === 'day') dayViewAutoSelect = false;
+                  selectedIndex = elements[0].index;
+                  updateSelectedData();
+                }
+              }
+            }
+          });
+        }
+      }
+      lastView = currentView;
     }
     
-    // updateSelectedData refreshes the selected label and slider controls.
     function updateSelectedData() {
       let data = [];
       if (currentView === 'day') {
-        if (dayViewAutoSelect) {
-          selectedIndex = getCurrentDayIndex();
-        }
+        if (dayViewAutoSelect) { selectedIndex = getCurrentDayIndex(); }
         data = graphData.days[currentDayIndex].data;
         document.getElementById('valueControls').style.display = 'flex';
         document.getElementById('dayNav').style.display = 'flex';
@@ -357,42 +420,183 @@
       }
     }
     
-    // setActiveButton highlights the current view button.
     function setActiveButton(activeId) {
-      document.querySelectorAll('.buttons button').forEach(btn => {
-        btn.classList.remove('active');
-      });
+      document.querySelectorAll('.buttons button').forEach(btn => btn.classList.remove('active'));
       document.getElementById(activeId).classList.add('active');
     }
     
-    // Event listeners for view switching.
+    // --- Live Graph (Using Day View Values) with Premium Ultra Animation ---
+    // Two live charts: one for Tech Focus and one for Study Focus.
+    let liveTechChart, liveStudyChart;
+    let liveTechData = [], liveStudyData = [];
+    let liveTechLabels = [], liveStudyLabels = [];
+    let liveChartTimer = null;
+    let liveCounter = 0;
+    const liveDataLength = 50;  // Number of data points shown
+    
+    function initLiveCharts() {
+      // Get current day view values for Tech and Study.
+      let dayTechData = graphData.days[currentDayIndex].data.map(pt => pt.tech);
+      let dayStudyData = graphData.days[currentDayIndex].data.map(pt => pt.study);
+      
+      // Build live data arrays by repeating cyclically until liveDataLength is reached.
+      liveTechData = [];
+      liveStudyData = [];
+      while(liveTechData.length < liveDataLength) {
+        liveTechData = liveTechData.concat(dayTechData);
+      }
+      liveTechData = liveTechData.slice(0, liveDataLength);
+      while(liveStudyData.length < liveDataLength) {
+        liveStudyData = liveStudyData.concat(dayStudyData);
+      }
+      liveStudyData = liveStudyData.slice(0, liveDataLength);
+      
+      liveTechLabels = Array.from({ length: liveDataLength }, (_, i) => i);
+      liveStudyLabels = Array.from({ length: liveDataLength }, (_, i) => i);
+      
+      // Premium gradient for live Tech chart.
+      const liveTechCtx = document.getElementById('liveTechChart').getContext('2d');
+      const premiumTechGradient = liveTechCtx.createLinearGradient(0, 0, 0, liveTechCtx.canvas.height);
+      premiumTechGradient.addColorStop(0, 'rgba(66, 135, 245, 0.3)');   // Deep blue
+      premiumTechGradient.addColorStop(1, 'rgba(153, 102, 255, 0.3)');  // Soft violet
+      
+      liveTechChart = new Chart(liveTechCtx, {
+        type: 'line',
+        data: {
+          labels: liveTechLabels,
+          datasets: [{
+            label: 'Live Tech Focus',
+            data: liveTechData,
+            borderWidth: 2,
+            fill: true,
+            backgroundColor: premiumTechGradient,
+            borderColor: 'rgba(66, 135, 245, 1)',
+            pointBackgroundColor: liveTechData.map(val => getColor(val)),
+            pointBorderColor: liveTechData.map(val => getColor(val)),
+            pointRadius: 6,
+            pointHoverRadius: 8,
+            tension: 0.4
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          animation: { duration: 150, easing: 'easeOutQuart' },
+          scales: { y: { min: 0, max: 120 } }
+        }
+      });
+      
+      // Premium gradient for live Study chart.
+      const liveStudyCtx = document.getElementById('liveStudyChart').getContext('2d');
+      const premiumStudyGradient = liveStudyCtx.createLinearGradient(0, 0, 0, liveStudyCtx.canvas.height);
+      premiumStudyGradient.addColorStop(0, 'rgba(75, 192, 192, 0.3)');   // Teal
+      premiumStudyGradient.addColorStop(1, 'rgba(75, 255, 135, 0.3)');   // Light green
+      
+      liveStudyChart = new Chart(liveStudyCtx, {
+        type: 'line',
+        data: {
+          labels: liveStudyLabels,
+          datasets: [{
+            label: 'Live Study Focus',
+            data: liveStudyData,
+            borderWidth: 2,
+            fill: true,
+            backgroundColor: premiumStudyGradient,
+            borderColor: 'rgba(75, 192, 192, 1)',
+            pointBackgroundColor: liveStudyData.map(val => getColor(val)),
+            pointBorderColor: liveStudyData.map(val => getColor(val)),
+            pointRadius: 6,
+            pointHoverRadius: 8,
+            tension: 0.4
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          animation: { duration: 150, easing: 'easeOutQuart' },
+          scales: { y: { min: 0, max: 120 } }
+        }
+      });
+      
+      liveCounter = 0;
+      liveChartTimer = setInterval(() => {
+        // Update live Tech Chart:
+        liveTechData.shift();
+        let updatedTech = graphData.days[currentDayIndex].data.map(pt => pt.tech);
+        liveTechData.push(updatedTech[liveCounter % updatedTech.length]);
+        liveTechLabels.shift();
+        liveTechLabels.push(liveCounter);
+        liveTechChart.update({duration: 150, easing: 'easeOutQuart'});
+        
+        // Update live Study Chart:
+        liveStudyData.shift();
+        let updatedStudy = graphData.days[currentDayIndex].data.map(pt => pt.study);
+        liveStudyData.push(updatedStudy[liveCounter % updatedStudy.length]);
+        liveStudyLabels.shift();
+        liveStudyLabels.push(liveCounter);
+        liveStudyChart.update({duration: 150, easing: 'easeOutQuart'});
+        
+        liveCounter++;
+      }, 200);
+    }
+    
+    function stopLiveCharts() {
+      if (liveChartTimer) {
+        clearInterval(liveChartTimer);
+        liveChartTimer = null;
+      }
+      if (liveTechChart) { liveTechChart.destroy(); liveTechChart = null; }
+      if (liveStudyChart) { liveStudyChart.destroy(); liveStudyChart = null; }
+    }
+    
+    // --- Event Listeners for View Switching ---
     document.getElementById('dayView').addEventListener('click', () => {
       currentView = 'day';
-      dayViewAutoSelect = true;
-      currentDayIndex = 0; // default to first day (e.g., Today)
-      selectedIndex = getCurrentDayIndex();
       setActiveButton('dayView');
+      stopLiveCharts();
+      document.getElementById('existingCharts').style.display = 'block';
+      document.getElementById('valueControls').style.display = 'flex';
+      document.getElementById('dayNav').style.display = 'flex';
+      document.getElementById('liveContainer').style.display = 'none';
       updateCharts();
       updateSelectedData();
     });
-    
     document.getElementById('dailyView').addEventListener('click', () => {
       currentView = 'daily';
       setActiveButton('dailyView');
-      selectedIndex = 0;
+      stopLiveCharts();
+      document.getElementById('existingCharts').style.display = 'block';
+      document.getElementById('valueControls').style.display = 'none';
+      document.getElementById('dayNav').style.display = 'none';
+      document.getElementById('liveContainer').style.display = 'none';
       updateCharts();
       updateSelectedData();
     });
-    
     document.getElementById('weeklyView').addEventListener('click', () => {
       currentView = 'weekly';
       setActiveButton('weeklyView');
-      selectedIndex = 0;
+      stopLiveCharts();
+      document.getElementById('existingCharts').style.display = 'block';
+      document.getElementById('valueControls').style.display = 'none';
+      document.getElementById('dayNav').style.display = 'none';
+      document.getElementById('liveContainer').style.display = 'none';
       updateCharts();
       updateSelectedData();
     });
+    document.getElementById('liveView').addEventListener('click', () => {
+      currentView = 'live';
+      setActiveButton('liveView');
+      // Hide regular charts and controls.
+      document.getElementById('existingCharts').style.display = 'none';
+      document.getElementById('valueControls').style.display = 'none';
+      document.getElementById('dayNav').style.display = 'none';
+      document.getElementById('selectedLabel').textContent = "Live Graph (Day View - Premium)";
+      document.getElementById('liveContainer').style.display = 'block';
+      stopLiveCharts();
+      initLiveCharts();
+    });
     
-    // Day navigation buttons (only active in Day View)
+    // Navigation for Day View.
     document.getElementById('prevDay').addEventListener('click', () => {
       if (currentView === 'day' && currentDayIndex > 0) {
         currentDayIndex--;
@@ -402,7 +606,6 @@
         updateSelectedData();
       }
     });
-    
     document.getElementById('nextDay').addEventListener('click', () => {
       if (currentView === 'day' && currentDayIndex < graphData.days.length - 1) {
         currentDayIndex++;
@@ -413,7 +616,7 @@
       }
     });
     
-    // Slider events (active only in Day View) update the corresponding hourly data.
+    // Slider events.
     document.getElementById('techSlider').addEventListener('input', function () {
       if (currentView === 'day') {
         const value = parseInt(this.value);
@@ -424,7 +627,6 @@
         localStorage.setItem('graphData', JSON.stringify(graphData));
       }
     });
-    
     document.getElementById('studySlider').addEventListener('input', function () {
       if (currentView === 'day') {
         const value = parseInt(this.value);
@@ -436,7 +638,7 @@
       }
     });
     
-    // Reset button restores initial data.
+    // Reset button.
     document.getElementById('resetData').addEventListener('click', () => {
       graphData = { ...initialData };
       currentDayIndex = 0;
